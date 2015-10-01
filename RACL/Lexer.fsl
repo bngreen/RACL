@@ -1,0 +1,71 @@
+﻿{
+module Lexer
+open System
+open Parser
+open Microsoft.FSharp.Text.Lexing
+
+let lexeme lexbuf =
+    LexBuffer<char>.LexemeString lexbuf
+}
+
+// These are some regular expression definitions
+let digit = ['0'-'9']
+let whitespace = [' ' '\t' ]
+let newline = ('\n' | '\r' '\n')
+let character = (['A'-'Z'] | ['a'-'z'])
+
+
+let string = '\"' ([^'\"'] | '\\''\"')* '\"'
+let identifier = (character | digit)* //character (character | digit)*
+
+rule tokenize = parse
+| "//" [^ '\n']* '\n' { tokenize lexbuf }
+| whitespace	{ tokenize lexbuf }
+| newline       { tokenize lexbuf }
+// Operators
+| "+"			{ PLUS }
+| "-"			{ MINUS }
+| "*"			{ ASTER }
+| "/"			{ SLASH }
+| "<"			{ LT }
+| ">"			{ GT }
+| "<="			{ LESSEQUAL }
+| ">="			{ GREATEREQUAL }
+| "="			{ EQUAL }
+| "=="			{ EQUALEQUAL }
+| "!="			{ NOTEQUAL }
+| "["			{ LBOX }
+| "]"			{ RBOX }
+| "%"			{ MOD }
+| "int"			{ INT }
+| "+="			{ PLUSEQUAL }
+| "-="			{ MINUSEQUAL }
+| "*="			{ TIMESEQUAL }
+| "/="			{ DIVEQUAL }
+| "%="			{ MODEQUAL }
+| ";"			{ LINEBREAK }
+// Misc
+| "("			{ LPAREN }
+| ")"			{ RPAREN }
+| "()"			{ PARENS }
+| ","			{ COMMA }
+| "{"			{ LBRACE }
+| "}"			{ RBRACE }
+| "{}"			{ BRACES }
+| "void"		{ VOID }
+| "global"		{ GLOBAL }
+| "if"			{ IF }
+| "else if"		{ ELSEIF }
+| "else"		{ ELSE }
+| "do"			{ DO }
+| "while"		{ WHILE }
+| "for"			{ FOR }
+// Numberic constants
+| "return"		{ RETURN }
+| "ref"			{ REF }
+| digit+		{ INT32 (lexeme lexbuf) }
+| string		{ STRING (lexeme lexbuf) }
+| identifier	{ IDENTIFIER (lexeme lexbuf) }
+// EOF
+| eof   { EOF }
+

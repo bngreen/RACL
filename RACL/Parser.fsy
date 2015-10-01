@@ -1,0 +1,198 @@
+﻿%{
+
+open Ast
+
+%}
+
+// The start token becomes a parser function in the compiled code:
+%start start
+
+// These are the terminal tokens of the grammar along with the types of
+// the data carried by each token:
+%token <System.String> INT32
+%token <System.String> STRING
+%token <System.String> IDENTIFIER
+%token PLUS MINUS ASTER	SLASH
+%token LPAREN RPAREN LT GT LESSEQUAL GREATEREQUAL EQUAL NOTEQUAL LBOX RBOX MOD EQUALEQUAL PERC
+%token PLUSEQUAL MINUSEQUAL TIMESEQUAL DIVEQUAL MODEQUAL
+%token LINEBREAK PARENS COMMA LBRACE RBRACE BRACES RETURN VOID GLOBAL REF
+%token IF DO WHILE FOR ELSEIF ELSE
+%token INT
+%token EOF
+
+// This is the type of the data produced by a successful reduction of the 'start'
+// symbol:
+%type < Ast.Program > start
+
+%%
+
+// These are the rules of the grammar along with the F# code of the 
+// actions executed as rules are reduced.  In this case the actions 
+// produce data using F# data construction terms.
+start: Prog { Program($1) }
+
+Prog:
+    | FunctionDeclarationList EOF					{ $1 }
+
+FunctionDeclarationList:
+	| FunctionDeclaration FunctionDeclarationList	{ $1 :: $2 }
+	| FunctionDeclaration							{ [$1] }
+
+FunctionDeclaration:
+	| INT Identifier FormalParameterBlock Body		{ FunctionDeclaration($2, $3, $4) }
+	| VOID Identifier FormalParameterBlock Body		{ VoidFunctionDeclaration($2, $3, $4) }   
+
+FormalParameterBlock:
+	| PARENS								{ FormalParameterless }
+	| LPAREN FormalParameterList RPAREN		{ FormalParameters($2) }
+
+FormalParameterList:
+	| FormalParameter COMMA FormalParameterList	{ $1 :: $3 }
+	| FormalParameter							{ [$1] }
+
+FormalParameter:
+	| INT Identifier						{ $2 }
+
+For:
+	| FOR LPAREN ForInitializer ForCondition ForIterator Body	{ For($3, $4, $5, $6) }
+
+ForIterator:
+	| Assignment RPAREN									{ ForIterator($1) }
+	| RPAREN											{ EmptyForIterator }
+
+ForCondition:
+	| Condition	LINEBREAK								{ ForCondition($1) }
+	| LINEBREAK											{ EmptyForCondition }
+
+ForInitializer:
+	| Identifier EQUAL Expression LINEBREAK							{ ForAssignment($1, $3) }
+	| LINEBREAK														{ EmptyForInitializer }
+
+If:
+	| IF LPAREN Condition RPAREN Body ElseIf				{ If($3, $5, $6) }
+	| IF LPAREN Condition RPAREN Body						{ If($3, $5, NoElse) }
+
+ElseIf:
+	| ELSEIF LPAREN Condition RPAREN Body ElseIf			{ ElseIf($3, $5, $6) }
+	| ELSEIF LPAREN Condition RPAREN Body					{ ElseIf($3, $5, NoElse) }
+	| Else													{ $1 }
+
+Else:
+	| ELSE Body												{ Else($2) }
+
+DoWhile:
+	| DO Body WHILE LPAREN Condition RPAREN					{ DoWhile($2, $5) }
+	| DO LINEBREAK WHILE LPAREN Condition RPAREN			{ DoWhile(EmptyBody, $5) }
+
+While:
+	| WHILE LPAREN Condition RPAREN Body		{ While($3, $5) }
+	| WHILE LPAREN Condition RPAREN LINEBREAK	{ While($3, EmptyBody) }
+
+Condition:
+	| Expression EQUALEQUAL Expression				{ IsEqual($1, $3) }
+	| Expression NOTEQUAL Expression				{ IsNotEqual($1, $3) }
+	| Expression LT Expression						{ IsLowerThan($1, $3) }
+	| Expression GT Expression						{ IsGreaterThan($1, $3) }
+	| Expression LESSEQUAL Expression				{ IsLowerEqualThan($1, $3) }
+	| Expression GREATEREQUAL Expression			{ IsGreaterEqualThan($1, $3) }
+
+Body:
+	| LBRACE BodyList RBRACE				{ Body($2) }
+	| EmptyBody								{ $1 }
+
+EmptyBody:
+	| BRACES								{ EmptyBody }
+	| LBRACE RBRACE							{ EmptyBody }
+
+BodyList:
+	| BodyMember BodyList					{ $1 :: $2 }
+	| BodyMember							{ [$1] }
+
+BodyMember:
+	| Assignment LINEBREAK											{ $1 }
+	| FunctionCall LINEBREAK										{ BodyFunctionCall($1) }
+	| FieldDeclaration												{ FieldDeclarationStatement($1) }
+	| GlobalFieldDeclaration										{ $1 }
+	| Return LINEBREAK												{ $1 }
+	| While															{ $1 }
+	| DoWhile														{ $1 }
+	| If															{ $1 }
+	| For															{ $1 }
+
+Return:
+	| RETURN Expression						{ Return($2) }
+
+GlobalFieldDeclaration:
+	| GLOBAL FieldDeclaration				{ GlobalFieldDeclaration($2) }
+
+FieldDeclaration:
+	| INT Identifier EQUAL Expression LINEBREAK		{ CreateAndAssignVariable($2, $4) }
+	| INT Identifier LINEBREAK						{ CreateVariable($2) }
+	| INT Identifier LBOX Number RBOX LINEBREAK		{ CreateArray($2, $4) }	 
+
+Assignment:
+	| Variable EQUAL Expression						{ Assignment($1, $3) }
+	| Variable PLUSEQUAL Expression					{ PlusAssignment($1, $3) }
+	| Variable MINUSEQUAL Expression				{ MinusAssignment($1, $3) }
+	| Variable TIMESEQUAL Expression				{ TimesAssignment($1, $3) }
+	| Variable DIVEQUAL Expression					{ DivAssignment($1, $3) }
+	| Variable MODEQUAL Expression					{ ModAssignment($1, $3) }
+
+Expression:
+	| Additive								{ $1 }
+
+Additive:
+	| Additive PLUS  Multiplicative			{ Plus($1, $3)  }
+    | Additive MINUS Multiplicative			{ Minus($1, $3) }
+    | Multiplicative						{ $1 }
+
+Multiplicative:
+	| Multiplicative ASTER Unary			{ Times($1, $3) }
+	| Multiplicative SLASH Unary			{ Divide($1, $3) }
+	| Multiplicative PERC Unary				{ Mod($1, $3) }
+	| Unary									{ $1 }
+
+Unary:
+	| PLUS Value						{ PlusSignal($2) }
+	| MINUS Value						{ MinusSignal($2) }
+	| Value								{ $1 }
+
+Variable:
+	| Identifier					{ Variable($1) }
+	| Array							{ $1 }
+
+Array:
+	| Identifier LBOX Expression RBOX	{ Array($1, $3) }
+
+Primary:
+	| Variable					{ ExpVariable($1) }
+	| FunctionCall				{ $1 }
+
+Identifier:
+	| IDENTIFIER				{ Identifier($1) }
+
+Value:
+	| Number						{ Numeric($1) }
+	| LPAREN Expression RPAREN		{ ParenEx($2) }
+	| Primary					{ $1 }
+
+Number:
+	| INT32						{ Integer($1) }
+
+FunctionCall:
+	| Identifier ActualParameterBlock		{ FunctionCall($1, $2) }
+
+ActualParameterBlock:
+	| PARENS								{ ActualParameterless }
+	| LPAREN ActualParameterList RPAREN		{ ActualParameters($2) }
+
+ActualParameterList:
+	| ActualParameter COMMA ActualParameterList	{ $1 :: $3 }
+	| ActualParameter							{ [$1] }
+	
+
+ActualParameter:
+	| STRING								{ StringParameter($1) }
+	| REF Identifier						{ RefIdentifierParameter($2) }
+	| REF Identifier LBOX Expression RBOX	{ RefArrayParameter($2, $4); }
+	| Expression							{ ExpressionParameter($1) }
